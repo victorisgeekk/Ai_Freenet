@@ -1,16 +1,29 @@
-# Autonomous Network Suite
+## Termux Local Execution & AI Integration
+
+Termux ပတ်ဝန်းကျင်တွင် `agent.py` (Core Logic) နှင့် `main.py` (UI) တို့ကို တိုက်ရိုက်စမ်းသပ် Run ရန်နှင့် Local AI (Ollama) ချိတ်ဆက်ပုံ အဆင့်ဆင့်မှာ အောက်ပါအတိုင်း ဖြစ်ပါသည် -
+
+### 1. Prerequisites Installation
+Termux တွင် လိုအပ်သော Python နှင့် Packages များကို အရင်ဆုံး တပ်ဆင်ပါ:
+```bash
+pkg update && pkg upgrade -y
+pkg install python git curl cmake -y
+pip install --upgrade pip
+pip install requests kivy
+```
+
+## Autonomous Network Suite
 
 Android ပလက်ဖောင်း (Termux) အတွက် တည်ဆောက်ထားသော အလိုအလျောက် Network Bypass၊ Fingerprinting နှင့် AI Self-Healing စွမ်းရည်များ ပါဝင်သည့် ပညာရပ်ဆိုင်ရာ ပရောဂျက်တစ်ခု ဖြစ်ပါသည်။
 
-## Project Features
+### Project Features
 
 * **Multi-Environment Fingerprinting:** Atom Mobile Data၊ Standard Wi-Fi နှင့် UniFi Captive Hotspot များကို အလိုအလျောက် ခွဲခြားထောက်လှမ်းခြင်း။
-* **Parallel Mesh Probing:** WebSocket နှင့် HTTP Vector များကို ThreadPoolExecutor ဖြင့် တစ်ပြိုင်နက် အမြန်ဆုံး စမ်းသပ်ခြင်း။
+* **Parallel Mesh Autonomous:** WebSocket နှင့် HTTP Vector များကို ThreadPoolExecutor ဖြင့် တစ်ပြိုင်နက် အမြန်ဆုံး စမ်းသပ်ခြင်း။
 * **AI Runtime Self-Healing:** Local Ollama (Qwen2.5) ကို အသုံးပြု၍ Runtime Error များကို အလိုအလျောက် ပြင်ဆင်ခြင်း (Self-patch/Fallback)။
 * **TUN Mode & VpnService Bridge:** Non-root Android ပတ်ဝန်းကျင်တွင် System Traffic များကို Local Port သို့ မှန်ကန်စွာ လမ်းကြောင်းလွှဲပေးခြင်း။
 * **Automated CI/CD APK Generation:** GitHub Actions ကို အသုံးပြု၍ ကုဒ်တင်လိုက်သည်နှင့် Android APK ကို အလိုအလျောက် တည်ဆောက်ပေးခြင်း။
 
-## Directory Structure
+### Directory Structure
 
 ```text
 autonomous-network-suite/
