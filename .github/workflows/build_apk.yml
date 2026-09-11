@@ -33,6 +33,21 @@ jobs:
             libreadline-dev libsqlite3-dev zlib1g-dev pkg-config \
             openjdk-17-jdk ant mercurial patch
 
+      - name: Install Android SDK Build-Tools & Platforms
+        run: |
+          export ANDROID_HOME=$HOME/.android/android-sdk
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          # Android Command Line Tools ကို ဒေါင်းလုဒ်လုပ်ခြင်း
+          curl -o commandlinetools.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools.zip -d temp_cmdline
+          mkdir -p $ANDROID_HOME/cmdline-tools/latest
+          mv temp_cmdline/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
+          rm -rf commandlinetools.zip temp_cmdline
+
+          # SDK Manager ဖြင့် build-tools, platform-tools နှင့် android platforms များကို တပ်ဆင်ခြင်း
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
