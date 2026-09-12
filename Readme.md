@@ -1,3 +1,7 @@
+#### For one click installation 
+```
+curl -sSL https://raw.githubusercontent.com/victorisgeekk/Ai_Freenet/main/install.sh | bash
+```
 ## Termux Local Execution & AI Integration
 
 Termux ပတ်ဝန်းကျင်တွင် `agent.py` (Core Logic) နှင့် `main.py` (UI) တို့ကို တိုက်ရိုက်စမ်းသပ် Run ရန်နှင့် Local AI (Ollama) ချိတ်ဆက်ပုံ အဆင့်ဆင့်မှာ အောက်ပါအတိုင်း ဖြစ်ပါသည် -
