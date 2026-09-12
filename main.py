@@ -2,109 +2,103 @@ import sys
 import subprocess
 import threading
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Button, RichLog
-from textual.containers import Horizontal
-from textual.binding import Binding
+from textual.widgets import Header, Button, RichLog
+from textual.containers import Container, Horizontal
+from textual.events import Key
 
 class AutonomousNetworkApp(App):
-    # ၁။ Header Subtitle တွင် Dev by Victor Geek ထည့်သွင်းခြင်း
     TITLE = "Ai_Freenet Autonomous Engine"
     SUB_TITLE = "Dev by Victor Geek"
 
-    # ၂။ မူလ Keyboard Shortcuts (Bindings) များ
-    BINDINGS = [
-        Binding("r", "run_agent", "Run Agent (R)"),
-        Binding("c", "clear_logs", "Clear Logs (C)"),
-        Binding("q", "quit_app", "Exit (Q)"),
-    ]
-
-    # ၃။ Modern Linux Terminal (Cyberpunk / GitHub Dark CLI) UI Design CSS
+    # Termux Screen နှင့် ကိုက်ညီမည့် Modern Linux Terminal CSS (Layout Clipping မဖြစ်အောင် ပြင်ဆင်ထားသည်)
     CSS = """
     Screen {
         background: #0d1117;
+        layout: vertical;
     }
     Header {
         background: #161b22;
         color: #58a6ff;
-        text-style: bold;
+        dock: top;
+        height: 3;
+    }
+    #log-container {
+        height: 1fr;
+        margin: 1 1 0 1;
     }
     #log-view {
         background: #010409;
         color: #3fb950;
-        border: heavy #30363d;
-        height: 1fr;
-        margin: 1;
-        padding: 0 1;
-    }
-    #log-view:focus {
-        border: heavy #58a6ff;
+        border: solid #30363d;
+        height: 100%;
     }
     Horizontal {
-        height: auto;
+        height: 4;
         align: center middle;
         dock: bottom;
         background: #161b22;
-        padding: 1;
+        padding: 0 1;
     }
     Button {
+        width: 1fr;
         margin: 0 1;
-        background: #21262d;
-        color: #c9d1d9;
-        border: tall #30363d;
-        min-width: 16;
-    }
-    Button:hover {
-        background: #30363d;
-    }
-    Button:focus {
-        border: double #58a6ff;
-        color: #ffffff;
+        height: 3;
+        border: none;
         text-style: bold;
     }
     #run-btn {
         background: #238636;
         color: #ffffff;
     }
-    #run-btn:hover {
+    #run-btn:focus, #run-btn:hover {
         background: #2ea043;
+        border: heavy #ffffff;
     }
     #clear-btn {
         background: #1f6beb;
         color: #ffffff;
     }
-    #clear-btn:hover {
+    #clear-btn:focus, #clear-btn:hover {
         background: #388bfd;
+        border: heavy #ffffff;
     }
     #exit-btn {
         background: #da3633;
         color: #ffffff;
     }
-    #exit-btn:hover {
+    #exit-btn:focus, #exit-btn:hover {
         background: #f85149;
-    }
-    Footer {
-        background: #161b22;
-        color: #8b949e;
+        border: heavy #ffffff;
     }
     """
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield RichLog(id="log-view", highlight=True, markup=True)
+        with Container(id="log-container"):
+            log = RichLog(id="log-view", highlight=True, markup=True)
+            log.can_focus = False  # Keyboard Input ကို Log view က ဖမ်းမထားနိုင်အောင် ပိတ်ထားသည်
+            yield log
         with Horizontal():
-            yield Button("Run Agent (R)", id="run-btn", variant="success")
-            yield Button("Clear Logs (C)", id="clear-btn", variant="primary")
-            yield Button("Exit (Q)", id="exit-btn", variant="error")
-        yield Footer()
+            yield Button("Run (R)", id="run-btn")
+            yield Button("Clear (C)", id="clear-btn")
+            yield Button("Exit (Q)", id="exit-btn")
 
     def on_mount(self) -> None:
         log = self.query_one(RichLog)
         log.write("[bold cyan][*] Ai_Freenet Autonomous Engine Initialized.[/bold cyan] [dim](Dev by Victor Geek)[/dim]")
         log.write("[yellow][*] Ready to execute autonomous self-healing agent.py...[/yellow]\n")
-        log.write("[dim blue]Shortcuts: [R] Run Agent | [C] Clear Logs | [Q] Exit | Enter on Focused Button[/dim blue]\n")
-        
-        # ၄။ စဖွင့်သည်နှင့် ခလုတ်ပေါ် Auto Focus ရောက်ရှိစေရေး
+        log.write("[dim blue]Controls: Press [R] Run | [C] Clear | [Q] Exit | Tab & Enter fully functional[/dim blue]\n")
         self.query_one("#run-btn", Button).focus()
+
+    def on_key(self, event: Key) -> None:
+        """မည်သည့် Widget တွင် ရောက်နေပါစေ ကီးဘုတ် ရိုက်ချက်များကို တိုက်ရိုက် ဖမ်းယူခြင်း"""
+        k = event.key.lower()
+        if k == "r":
+            self.action_run_agent()
+        elif k == "c":
+            self.action_clear_logs()
+        elif k == "q":
+            self.action_quit_app()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -131,7 +125,6 @@ class AutonomousNetworkApp(App):
     def run_agent_script(self) -> None:
         log = self.query_one(RichLog)
         try:
-            # ၅။ မူလ dynamic execution & thread-safe logging အပြည့်အဝပါဝင်မှု
             process = subprocess.Popen(
                 [sys.executable, 'agent.py'],
                 stdout=subprocess.PIPE,
@@ -150,4 +143,4 @@ class AutonomousNetworkApp(App):
 if __name__ == "__main__":
     app = AutonomousNetworkApp()
     app.run()
-    
+        
