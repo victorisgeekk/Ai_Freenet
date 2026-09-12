@@ -1,2 +1,4 @@
 requests>=2.31.0
+textual>=0.20.0
+rich>=12.6.0
 kivy>=2.2.1
