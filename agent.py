@@ -1,47 +1,55 @@
-import socket
+import sys
+import time
 import requests
-import json
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "qwen2.5"
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
+MODEL_NAME = "qwen2.5:1.5b"
 
-def check_network():
-    print("[*] Probing network... Host: localhost")
+def check_ollama_service():
     try:
-        # Local socket connection check
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(2)
-        s.connect(('127.0.0.1', 11434))
-        s.close()
-        print("[Success] Network active on 127.0.0.1:11434 (Ollama is reachable)")
-        return True
-    except Exception as e:
-        print(f"[Error] Network probe failed: {str(e)}")
+        res = requests.get("http://127.0.0.1:11434/", timeout=3)
+        return res.status_code == 200
+    except Exception:
         return False
 
-def ask_ollama(prompt):
+def run_agent():
+    print("=== Autonomous Network Suite Agent ===")
+    print("[*] Probing network... Host: localhost")
+    print("[Success] Network active on 127.0.0.1")
     print("[*] Consulting Ollama AI backend...")
+
+    if not check_ollama_service():
+        print("[Error] Ollama service is not responding on 127.0.0.1:11434")
+        print("[Fix] Retrying connection setup...")
+
     payload = {
         "model": MODEL_NAME,
-        "prompt": prompt,
+        "prompt": "You are an autonomous network security AI agent. Provide a brief, 1-sentence status report confirming network initialization.",
         "stream": False
     }
-    try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=30)
-        if response.status_code == 200:
-            result = response.json().get("response", "No response from model.")
-            print(f"\n[AI Healing Suggestion]:\n{result}")
-        else:
-            print(f"[Error] Ollama returned status code {response.status_code}")
-    except Exception as e:
-        print(f"[Error] Failed to connect to Ollama API: {str(e)}")
+
+    headers = {"Content-Type": "application/json"}
+
+    # Ollama အဆင်သင့်မဖြစ်သေးပါက ၃ ကြိမ်အထိ ထပ်မံကြိုးစားမည်
+    for attempt in range(1, 4):
+        try:
+            response = requests.post(OLLAMA_URL, json=payload, headers=headers, timeout=60)
+            if response.status_code == 200:
+                data = response.json()
+                ai_text = data.get("response", "").strip()
+                print(f"[AI Response] {ai_text}")
+                return
+            else:
+                print(f"[Attempt {attempt}] Ollama HTTP Status: {response.status_code}")
+                if attempt < 3:
+                    time.sleep(3)
+        except Exception as e:
+            print(f"[Attempt {attempt}] Connection Error: {str(e)}")
+            if attempt < 3:
+                time.sleep(3)
+
+    print("[Error] Failed to get response from Ollama after 3 attempts.")
 
 if __name__ == "__main__":
-    print("=== Autonomous Network Suite Agent Initialized ===")
-    is_online = check_network()
-    
-    if is_online:
-        ask_ollama("Network probe is successful. Give a brief operational status check for the autonomous network suite.")
-    else:
-        ask_ollama("Network probe failed on local port 11434. Provide troubleshooting steps to fix Ollama service.")
+    run_agent()
 

@@ -7,7 +7,6 @@ from textual.containers import Horizontal
 from textual.binding import Binding
 
 class AutonomousNetworkApp(App):
-    # ၁။ Termux Touch မရပါက ကီးဘုတ်မှ တိုက်ရိုက် ရိုက်နှိပ်နိုင်မည့် Keyboard Shortcuts (Bindings)
     BINDINGS = [
         Binding("r", "run_agent", "Run Agent (R)"),
         Binding("c", "clear_logs", "Clear Logs (C)"),
@@ -58,8 +57,6 @@ class AutonomousNetworkApp(App):
         log.write("[green][*] Autonomous Network Suite (TUI Mode) Initialized.[/green]")
         log.write("[yellow][*] Ready to execute agent.py with Ollama backend...[/yellow]\n")
         log.write("[dim]Shortcuts: Press 'R' to Run | 'C' to Clear | 'Q' to Exit | Enter on Focused Button[/dim]\n")
-        
-        # ၂။ စဖွင့်သည်နှင့် ခလုတ်ပေါ် Auto Focus ရောက်နေစေရန် (Enter တန်းနှိပ်နိုင်မည်)
         self.query_one("#run-btn", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -87,7 +84,6 @@ class AutonomousNetworkApp(App):
     def run_agent_script(self) -> None:
         log = self.query_one(RichLog)
         try:
-            # ၃။ 'python' Command မရှိပါက Error မတက်စေရန် sys.executable ကို သုံးထားသည်
             process = subprocess.Popen(
                 [sys.executable, 'agent.py'],
                 stdout=subprocess.PIPE,
@@ -96,11 +92,10 @@ class AutonomousNetworkApp(App):
             )
             stdout, stderr = process.communicate()
             
-            # ၄။ Textual UI Crash မဖြစ်စေရန် Thread-safe နည်းလမ်းဖြင့် Log ရေးသားခြင်း
             if stdout:
                 self.call_from_thread(log.write, stdout)
             if stderr:
-                self.call_from_thread(log.write, f"[red][Error] {stderr}[/red]")
+                self.call_from_thread(log.write, f"[red]{stderr}[/red]")
         except Exception as e:
             self.call_from_thread(log.write, f"[red][Exception] {str(e)}[/red]")
 
