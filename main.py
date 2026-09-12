@@ -1,10 +1,19 @@
-from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Button, RichLog
-from textual.containers import Container, Horizontal
+import sys
 import subprocess
 import threading
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Footer, Button, RichLog
+from textual.containers import Horizontal
+from textual.binding import Binding
 
 class AutonomousNetworkApp(App):
+    # ၁။ Termux Touch မရပါက ကီးဘုတ်မှ တိုက်ရိုက် ရိုက်နှိပ်နိုင်မည့် Keyboard Shortcuts (Bindings)
+    BINDINGS = [
+        Binding("r", "run_agent", "Run Agent (R)"),
+        Binding("c", "clear_logs", "Clear Logs (C)"),
+        Binding("q", "quit_app", "Exit (Q)"),
+    ]
+
     CSS = """
     Screen {
         background: #0d1117;
@@ -26,6 +35,10 @@ class AutonomousNetworkApp(App):
         background: #238636;
         color: #ffffff;
     }
+    Button:focus {
+        border: double #ffffff;
+        background: #2ea043;
+    }
     #exit-btn {
         background: #da3633;
     }
@@ -35,45 +48,61 @@ class AutonomousNetworkApp(App):
         yield Header(show_clock=True)
         yield RichLog(id="log-view", highlight=True, markup=True)
         with Horizontal():
-            yield Button("Run Agent", id="run-btn", variant="success")
-            yield Button("Clear Logs", id="clear-btn", variant="primary")
-            yield Button("Exit", id="exit-btn", variant="error")
+            yield Button("Run Agent (R)", id="run-btn", variant="success")
+            yield Button("Clear Logs (C)", id="clear-btn", variant="primary")
+            yield Button("Exit (Q)", id="exit-btn", variant="error")
         yield Footer()
 
     def on_mount(self) -> None:
         log = self.query_one(RichLog)
         log.write("[green][*] Autonomous Network Suite (TUI Mode) Initialized.[/green]")
         log.write("[yellow][*] Ready to execute agent.py with Ollama backend...[/yellow]\n")
+        log.write("[dim]Shortcuts: Press 'R' to Run | 'C' to Clear | 'Q' to Exit | Enter on Focused Button[/dim]\n")
+        
+        # ၂။ စဖွင့်သည်နှင့် ခလုတ်ပေါ် Auto Focus ရောက်နေစေရန် (Enter တန်းနှိပ်နိုင်မည်)
+        self.query_one("#run-btn", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
-        log = self.query_one(RichLog)
-
         if button_id == "run-btn":
-            log.write("[cyan][*] Executing agent.py in background...[/cyan]")
-            threading.Thread(target=self.run_agent_script, args=(log,), daemon=True).start()
+            self.action_run_agent()
         elif button_id == "clear-btn":
-            log.clear()
-            log.write("[green]Logs cleared.[/green]")
+            self.action_clear_logs()
         elif button_id == "exit-btn":
-            self.exit()
+            self.action_quit_app()
 
-    def run_agent_script(self, log):
+    def action_run_agent(self) -> None:
+        log = self.query_one(RichLog)
+        log.write("[cyan][*] Executing agent.py in background...[/cyan]")
+        threading.Thread(target=self.run_agent_script, daemon=True).start()
+
+    def action_clear_logs(self) -> None:
+        log = self.query_one(RichLog)
+        log.clear()
+        log.write("[green]Logs cleared.[/green]")
+
+    def action_quit_app(self) -> None:
+        self.exit()
+
+    def run_agent_script(self) -> None:
+        log = self.query_one(RichLog)
         try:
+            # ၃။ 'python' Command မရှိပါက Error မတက်စေရန် sys.executable ကို သုံးထားသည်
             process = subprocess.Popen(
-                ['python', 'agent.py'],
+                [sys.executable, 'agent.py'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
             stdout, stderr = process.communicate()
             
+            # ၄။ Textual UI Crash မဖြစ်စေရန် Thread-safe နည်းလမ်းဖြင့် Log ရေးသားခြင်း
             if stdout:
-                log.write(stdout)
+                self.call_from_thread(log.write, stdout)
             if stderr:
-                log.write(f"[red][Error] {stderr}[/red]")
+                self.call_from_thread(log.write, f"[red][Error] {stderr}[/red]")
         except Exception as e:
-            log.write(f"[red][Exception] {str(e)}[/red]")
+            self.call_from_thread(log.write, f"[red][Exception] {str(e)}[/red]")
 
 if __name__ == "__main__":
     app = AutonomousNetworkApp()
