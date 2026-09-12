@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Python CI smoke tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest
+
+      - name: Quick import smoke test
+        run: |
+          python - <<'PY'
+import importlib
+mods = ['textual','requests','rich']
+miss = []
+for m in mods:
+    try:
+        importlib.import_module(m)
+    except Exception as e:
+        miss.append((m,str(e)))
+if miss:
+    print('Missing/failed imports:')
+    for m,e in miss:
+        print(m, e)
+    raise SystemExit(2)
+print('Dependencies import OK')
+PY
+
+      - name: Syntax check (compile all .py)
+        run: python -m compileall -q .
+
+      - name: Run tests
+        run: |
+          pytest -q
+
+      - name: Import main (smoke run, no network)
+        run: |
+          python - <<'PY'
+try:
+    import main
+    print('main imported OK')
+except Exception as e:
+    print('Error importing main:', e)
+    raise
+PY
+
+      - name: Lint (non-failing)
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+          flake8 --max-line-length=120 || true
