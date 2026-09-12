@@ -9,7 +9,7 @@ OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 MODEL_NAME = "qwen2.5:1.5b"
 WORK_DIR = "/root/Ai_Freenet"
 DYNAMIC_SCRIPT = os.path.join(WORK_DIR, "generated_task.py")
-BT = "```"  # Markdown Code Block မပျက်စေရန် String Variable အဖြစ် သုံးထားသည်
+BT = "```"
 
 def call_ollama(prompt):
     payload = {
@@ -26,7 +26,6 @@ def call_ollama(prompt):
     return ""
 
 def extract_code(raw_response):
-    """AI တုံ့ပြန်ချက်ထဲမှ Python Code ကို တိကျစွာ ခွဲထုတ်ယူခြင်း"""
     match = re.search(r'```(?:python)?\s*(.*?)\s*```', raw_response, re.DOTALL)
     if match:
         return match.group(1).strip()
@@ -97,4 +96,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
+    
