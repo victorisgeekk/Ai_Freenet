@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+      ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
+      PATH: /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin:/home/runner/.buildozer/android/platform/android-sdk/platform-tools:/home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.2:${{ env.PATH }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,20 +37,54 @@ jobs:
             libreadline-dev libsqlite3-dev zlib1g-dev pkg-config \
             openjdk-17-jdk ant mercurial patch
 
-      - name: Install Android SDK Build-Tools & Platforms
+      - name: Install Android command-line tools and build-tools
         run: |
-          export ANDROID_HOME=$HOME/.android/android-sdk
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          # Android Command Line Tools ကို ဒေါင်းလုဒ်လုပ်ခြင်း
-          curl -o commandlinetools.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools.zip -d temp_cmdline
-          mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          mv temp_cmdline/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
-          rm -rf commandlinetools.zip temp_cmdline
+          sudo apt-get update
+          sudo apt-get install -y unzip wget
+          ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-latest.zip -O cmdline.zip
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          unzip -q cmdline.zip -d $ANDROID_SDK_ROOT/cmdline-tools
+          if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" ]; then
+            mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+          else
+            mv $ANDROID_SDK_ROOT/cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/latest || true
+          fi
+          rm -f cmdline.zip
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
-          # SDK Manager ဖြင့် build-tools, platform-tools နှင့် android platforms များကို တပ်ဆင်ခြင်း
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+      - name: Android SDK diagnostics
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "PATH=$PATH"
+          ls -la $ANDROID_SDK_ROOT || true
+          ls -la $ANDROID_SDK_ROOT/build-tools || true
+          ls -la $ANDROID_SDK_ROOT/platform-tools || true
+          which aidl || echo "aidl not found in PATH"
+          if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --list || true
+          else
+            echo "sdkmanager not found"
+          fi
+
+      - name: Ensure aidl is available
+        run: |
+          set -e
+          AIDL_PATH=$(find $ANDROID_SDK_ROOT -type f -name aidl -print -quit || true)
+          echo "Found aidl: $AIDL_PATH"
+          if [ -n "$AIDL_PATH" ] && [ -x "$AIDL_PATH" ]; then
+            echo "Making aidl accessible"
+            sudo ln -sf "$AIDL_PATH" /usr/local/bin/aidl
+            echo "/usr/local/bin" >> $GITHUB_PATH
+          else
+            echo "aidl not found or not executable. Printing SDK tree for debugging"
+            ls -R $ANDROID_SDK_ROOT | sed -n '1,400p'
+            exit 1
+          fi
 
       - name: Install Buildozer and Cython
         run: |
