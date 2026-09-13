@@ -5,20 +5,39 @@ import time
 import subprocess
 import requests
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Configuration via environment for portability
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
 MODEL_NAME = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
 # Execution timeout (seconds) for dynamic scripts
 EXEC_TIMEOUT = int(os.environ.get("EXEC_TIMEOUT", "40"))
+# Opt-in required to execute AI-generated code
+ALLOW_EXEC = os.environ.get("AI_FREENET_ALLOW_EXEC", "false").lower() == "true"
 
 # Use repository directory as working directory for portability
 WORK_DIR = os.path.dirname(os.path.abspath(__file__))
-DYNAMIC_SCRIPT = os.path.join(WORK_DIR, "generated_task.py")
+# Sandbox directory where generated scripts will be written and executed
+SANDBOX_DIR = os.path.join(WORK_DIR, "sandbox")
+DYNAMIC_SCRIPT = os.path.join(SANDBOX_DIR, "generated_task.py")
 BT = "```"
 
-# Ensure work directory exists (safe no-op for repo root)
+# Ensure work and sandbox directories exist
 os.makedirs(WORK_DIR, exist_ok=True)
+os.makedirs(SANDBOX_DIR, exist_ok=True)
+
+# Ensure logs directory
+LOG_DIR = os.path.join(WORK_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Agent logger (rotating)
+agent_logger = logging.getLogger("ai_freenet_agent")
+agent_logger.setLevel(logging.INFO)
+if not agent_logger.handlers:
+    fh = RotatingFileHandler(os.path.join(LOG_DIR, "agent.log"), maxBytes=1024 * 1024, backupCount=3, encoding='utf-8')
+    fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    agent_logger.addHandler(fh)
 
 
 def call_ollama(prompt):
@@ -34,6 +53,7 @@ def call_ollama(prompt):
             try:
                 data = res.json()
             except ValueError:
+                agent_logger.info("Ollama returned non-json response")
                 return res.text.strip()
 
             # Flexible parsing for different LLM response schemas
@@ -52,8 +72,10 @@ def call_ollama(prompt):
             # Fallback: stringify
             return json.dumps(data)
         else:
+            agent_logger.error("Ollama returned status %s: %s", res.status_code, res.text[:200])
             print(f"[!] Ollama returned status {res.status_code}: {res.text[:200]}")
     except Exception as e:
+        agent_logger.exception("Ollama Connection Error: %s", e)
         print(f"[!] Ollama Connection Error: {str(e)}")
     return ""
 
@@ -99,6 +121,7 @@ def write_script_atomic(path, content):
         os.replace(tmp, path)
         return True
     except Exception as e:
+        agent_logger.exception("Failed to write script: %s", e)
         print(f"[!] Failed to write script: {e}")
         try:
             os.remove(tmp)
@@ -107,19 +130,56 @@ def write_script_atomic(path, content):
         return False
 
 
+def contains_dangerous_patterns(code):
+    """Very conservative blacklist for obviously dangerous operations."""
+    if not code:
+        return False
+    patterns = [
+        r"\bos\.remove\b",
+        r"\bshutil\.rmtree\b",
+        r"\bsubprocess\.(Popen|call|run)\s*\(.*shell\s*=\s*True",
+        r"\beval\b",
+        r"\bexec\b",
+        r"\bopen\s*\(.*[,\s]*\'w\'",
+        r"\bos\.system\b",
+        r"\bfork\b",
+        r"\bchmod\b",
+        r"\bchown\b",
+    ]
+    for p in patterns:
+        if re.search(p, code):
+            return True
+    return False
+
+
 def execute_with_self_healing(code_content, max_retries=3):
     current_code = code_content
     for attempt in range(1, max_retries + 1):
         if not current_code:
+            agent_logger.warning("Code extraction failed; stopping retries")
             print("[!] Code extraction failed. Retrying...")
             break
 
-        print(f"\n[+] Executing Dynamic Task (Attempt {attempt}/{max_retries})...")
+        print(f"\n[+] Prepared Dynamic Task (Attempt {attempt}/{max_retries})...")
+
+        # Safety checks before writing/executing
+        if contains_dangerous_patterns(current_code):
+            agent_logger.warning("Refusing to execute code due to dangerous patterns. Code snippet logged.")
+            agent_logger.info("Raw rejected code:\n%s", current_code[:4000])
+            print("[!] Extracted code contains potentially dangerous operations. Execution refused.")
+            return None
 
         ok = write_script_atomic(DYNAMIC_SCRIPT, current_code)
         if not ok:
             print("[!] Could not write dynamic script. Aborting attempt.")
             break
+
+        if not ALLOW_EXEC:
+            agent_logger.info("Execution skipped because AI_FREENET_ALLOW_EXEC is not set to true")
+            print("[!] Execution is disabled by default. To enable, set AI_FREENET_ALLOW_EXEC=true")
+            # Save the generated script path for inspection
+            agent_logger.info("Generated script saved to %s", DYNAMIC_SCRIPT)
+            return None
 
         proc = None
         try:
@@ -127,9 +187,16 @@ def execute_with_self_healing(code_content, max_retries=3):
                 [sys.executable, DYNAMIC_SCRIPT],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                cwd=SANDBOX_DIR,
             )
             stdout, stderr = proc.communicate(timeout=EXEC_TIMEOUT)
+
+            agent_logger.info("Executed dynamic script; returncode=%s", proc.returncode)
+            if stdout:
+                agent_logger.info("Dynamic stdout:\n%s", stdout)
+            if stderr:
+                agent_logger.error("Dynamic stderr:\n%s", stderr)
 
             if proc.returncode == 0:
                 print("\n[SUCCESS] Execution Output:")
@@ -154,6 +221,7 @@ def execute_with_self_healing(code_content, max_retries=3):
                     proc.kill()
                 except Exception:
                     pass
+            agent_logger.warning("Dynamic script timed out; attempting to self-heal")
             print("[!] Script timed out/froze. AI is optimizing code with strict timeouts...")
             timeout_prompt = (
                 f"This Python script froze or timed out:\n\n{BT}python\n{current_code}\n{BT}\n\n"
@@ -164,14 +232,17 @@ def execute_with_self_healing(code_content, max_retries=3):
             current_code = extract_code(raw_fixed)
 
         except Exception as e:
+            agent_logger.exception("Unexpected exception during script execution: %s", e)
             print(f"[!] Unexpected exception during script execution: {e}")
             break
 
+    agent_logger.error("Max retries reached or execution aborted")
     print("[!] Max retries reached. Task stopped.")
     return None
 
 
 def main():
+    agent_logger.info("Agent started")
     print("=== Ai_Freenet Autonomous Self-Healing Engine ===")
     print("[*] AI is dynamically deciding network discovery tasks...")
 
@@ -184,8 +255,10 @@ def main():
     initial_code = extract_code(raw_ai)
 
     if not initial_code:
+        agent_logger.warning("No code returned by AI. Raw response logged")
         print("[!] No code returned by AI. Raw AI response (truncated):")
         print(raw_ai[:2000])
+        agent_logger.info("Raw AI response:\n%s", raw_ai[:4000])
         return
 
     output = execute_with_self_healing(initial_code)
@@ -202,8 +275,10 @@ def main():
         if next_code:
             execute_with_self_healing(next_code)
         else:
+            agent_logger.info("AI did not return runnable next-step code")
             print("[!] AI did not return runnable next-step code. Skipping.")
     else:
+        agent_logger.info("Initial dynamic task did not produce output")
         print("[!] Initial dynamic task did not produce output. Stopping.")
 
 
