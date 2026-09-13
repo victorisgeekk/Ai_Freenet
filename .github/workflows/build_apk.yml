@@ -71,6 +71,21 @@ jobs:
             echo "sdkmanager not found"
           fi
 
+      - name: Ensure aidl is available
+        run: |
+          set -e
+          AIDL_PATH=$(find $ANDROID_SDK_ROOT -type f -name aidl -print -quit || true)
+          echo "Found aidl: $AIDL_PATH"
+          if [ -n "$AIDL_PATH" ] && [ -x "$AIDL_PATH" ]; then
+            echo "Making aidl accessible"
+            sudo ln -sf "$AIDL_PATH" /usr/local/bin/aidl
+            echo "/usr/local/bin" >> $GITHUB_PATH
+          else
+            echo "aidl not found or not executable. Printing SDK tree for debugging"
+            ls -R $ANDROID_SDK_ROOT | sed -n '1,400p'
+            exit 1
+          fi
+
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip
