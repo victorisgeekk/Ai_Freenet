@@ -6,6 +6,7 @@ import subprocess
 import requests
 import json
 import logging
+import shutil
 from logging.handlers import RotatingFileHandler
 
 # Configuration via environment for portability
@@ -15,6 +16,10 @@ MODEL_NAME = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
 EXEC_TIMEOUT = int(os.environ.get("EXEC_TIMEOUT", "40"))
 # Opt-in required to execute AI-generated code
 ALLOW_EXEC = os.environ.get("AI_FREENET_ALLOW_EXEC", "false").lower() == "true"
+# Container execution mode: '', 'docker'
+CONTAINER_MODE = os.environ.get("AI_FREENET_CONTAINER_MODE", "").lower()
+# If container mode is docker, allow network inside container only if this is true
+ALLOW_NETWORK_IN_CONTAINER = os.environ.get("AI_FREENET_ALLOW_NETWORK_IN_CONTAINER", "false").lower() == "true"
 
 # Use repository directory as working directory for portability
 WORK_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -152,6 +157,41 @@ def contains_dangerous_patterns(code):
     return False
 
 
+def run_in_docker(timeout):
+    """Run the generated script inside a docker container and return (stdout, stderr, returncode)."""
+    docker_path = shutil.which('docker')
+    if not docker_path:
+        agent_logger.warning("Docker not found on PATH; falling back to direct execution")
+        return None
+
+    # Build docker run command
+    docker_cmd = [
+        'docker', 'run', '--rm',
+        '--cpus', os.environ.get('AI_FREENET_DOCKER_CPUS', '0.5'),
+        '--memory', os.environ.get('AI_FREENET_DOCKER_MEMORY', '256m'),
+        '-v', f"{SANDBOX_DIR}:/sandbox:ro",
+        '-w', '/sandbox',
+    ]
+
+    # network handling
+    if not ALLOW_NETWORK_IN_CONTAINER:
+        docker_cmd += ['--network', 'none']
+
+    # image and command
+    docker_cmd += ['python:3.11-slim', 'python', 'generated_task.py']
+
+    agent_logger.info("Running generated task inside docker: %s", ' '.join(docker_cmd))
+    try:
+        proc = subprocess.run(docker_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        return proc.stdout, proc.stderr, proc.returncode
+    except subprocess.TimeoutExpired:
+        agent_logger.warning("Docker run timed out")
+        return None
+    except Exception as e:
+        agent_logger.exception("Docker run failed: %s", e)
+        return None
+
+
 def execute_with_self_healing(code_content, max_retries=3):
     current_code = code_content
     for attempt in range(1, max_retries + 1):
@@ -181,6 +221,39 @@ def execute_with_self_healing(code_content, max_retries=3):
             agent_logger.info("Generated script saved to %s", DYNAMIC_SCRIPT)
             return None
 
+        # Execute either inside container or directly, depending on CONTAINER_MODE
+        if CONTAINER_MODE == 'docker':
+            result = run_in_docker(timeout=EXEC_TIMEOUT)
+            if result is None:
+                # Docker unavailable or failed; fall back to direct execution but log it
+                agent_logger.warning("Falling back to direct execution due to docker failure")
+            else:
+                stdout, stderr, returncode = result
+                agent_logger.info("Container execution returncode=%s", returncode)
+                if stdout:
+                    agent_logger.info("Container stdout:\n%s", stdout)
+                if stderr:
+                    agent_logger.error("Container stderr:\n%s", stderr)
+
+                if returncode == 0:
+                    print("\n[SUCCESS] Execution Output:")
+                    print(stdout)
+                    return stdout
+                else:
+                    error_msg = stderr if stderr else stdout
+                    print(f"[!] Execution Error Detected:\n{error_msg}")
+                    print("[*] AI is analyzing error log and self-healing script...")
+
+                    fix_prompt = (
+                        f"Fix this Python code that failed to run on Termux/Ubuntu.\n\n"
+                        f"Code:\n{BT}python\n{current_code}\n{BT}\n\n"
+                        f"Error:\n{error_msg}\n\nReturn ONLY valid python code wrapped in triple backticks."
+                    )
+                    raw_fixed = call_ollama(fix_prompt)
+                    current_code = extract_code(raw_fixed)
+                    continue
+
+        # Direct execution fallback
         proc = None
         try:
             proc = subprocess.Popen(
