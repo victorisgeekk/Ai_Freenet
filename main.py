@@ -1,10 +1,24 @@
 import sys
 import subprocess
 import threading
+import os
+import logging
+from logging.handlers import RotatingFileHandler
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Button, RichLog
+from textual.widgets import Header, Button, RichLog, Footer
 from textual.containers import Container, Horizontal
 from textual.events import Key
+
+# Setup file logging (rotating)
+LOG_DIR = os.environ.get("AI_FREENET_LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+os.makedirs(LOG_DIR, exist_ok=True)
+log_file = os.path.join(LOG_DIR, "ui.log")
+logger = logging.getLogger("ai_freenet_ui")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    fh = RotatingFileHandler(log_file, maxBytes=1024 * 1024, backupCount=3, encoding='utf-8')
+    fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    logger.addHandler(fh)
 
 class AutonomousNetworkApp(App):
     TITLE = "Ai_Freenet Autonomous Engine"
@@ -15,6 +29,11 @@ class AutonomousNetworkApp(App):
         ("r", "run_agent", "Run"),
         ("c", "clear_logs", "Clear"),
         ("q", "quit_app", "Exit"),
+        # Fallback keys for terminals that don't send single-key events reliably
+        ("f1", "run_agent", "Run (F1)"),
+        ("f2", "clear_logs", "Clear (F2)"),
+        ("f3", "quit_app", "Exit (F3)"),
+        ("ctrl+r", "run_agent", "Run (Ctrl-R)"),
     ]
 
     # Termux Screen နှင့် ကိုက်ညီမည့် Modern Linux Terminal CSS (Layout Clipping မဖြစ်အောင် ပြင်ဆင်ထားသည်)
@@ -77,6 +96,12 @@ class AutonomousNetworkApp(App):
         background: #f85149;
         border: heavy #ffffff;
     }
+    Footer {
+        dock: bottom;
+        height: 1;
+        background: #161b22;
+        color: #9aa4b2;
+    }
     """
 
     def compose(self) -> ComposeResult:
@@ -89,15 +114,18 @@ class AutonomousNetworkApp(App):
             yield Button("Run (R)", id="run-btn")
             yield Button("Clear (C)", id="clear-btn")
             yield Button("Exit (Q)", id="exit-btn")
+        # Footer will display bindings/help
+        yield Footer()
 
     def on_mount(self) -> None:
         log = self.query_one(RichLog)
         log.write("[bold cyan][*] Ai_Freenet Autonomous Engine Initialized.[/bold cyan] [dim](Dev by Victor Geek)[/dim]")
         log.write("[yellow][*] Ready to execute autonomous self-healing agent.py...[/yellow]\n")
-        log.write("[dim blue]Controls: Press [R] Run | [C] Clear | [Q] Exit | Tab & Enter fully functional[/dim blue]\n")
+        log.write("[dim blue]Controls: Press [R] Run | [C] Clear | [Q] Exit | F1/F2/F3 and Ctrl-R as fallbacks[/dim blue]\n")
         self.query_one("#run-btn", Button).focus()
+        logger.info("UI initialized and ready")
 
-    # We removed the fragile / truncated on_key docstring handler and rely on BINDINGS
+    # on_key removed in favor of BINDINGS which are more reliable
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -110,34 +138,47 @@ class AutonomousNetworkApp(App):
 
     def action_run_agent(self) -> None:
         log = self.query_one(RichLog)
-        log.write("[bold green][*] Executing agent.py in background...[/bold green]")
+        msg = "[bold green][*] Executing agent.py in background...[/bold green]"
+        log.write(msg)
+        logger.info("User triggered run_agent")
         threading.Thread(target=self.run_agent_script, daemon=True).start()
 
     def action_clear_logs(self) -> None:
         log = self.query_one(RichLog)
         log.clear()
         log.write("[green]Logs cleared.[/green]")
+        logger.info("User cleared logs")
 
     def action_quit_app(self) -> None:
+        logger.info("User exited app")
         self.exit()
 
     def run_agent_script(self) -> None:
         log = self.query_one(RichLog)
         try:
+            env = os.environ.copy()
+            # Make sure agent.py runs with the repo directory as cwd
+            cwd = os.path.dirname(os.path.abspath(__file__))
             process = subprocess.Popen(
                 [sys.executable, 'agent.py'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                env=env,
+                cwd=cwd,
             )
             stdout, stderr = process.communicate()
-            
+
             if stdout:
+                # write both to UI and file logger
                 self.call_from_thread(log.write, stdout)
+                logger.info("agent stdout:\n%s", stdout)
             if stderr:
                 self.call_from_thread(log.write, f"[red]{stderr}[/red]")
+                logger.error("agent stderr:\n%s", stderr)
         except Exception as e:
             self.call_from_thread(log.write, f"[red][Exception] {str(e)}[/red]")
+            logger.exception("Exception while running agent.py: %s", e)
 
 if __name__ == "__main__":
     app = AutonomousNetworkApp()
