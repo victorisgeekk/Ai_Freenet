@@ -1,3 +1,8 @@
+# This repository primarily targets a Textual terminal UI.
+# Kivy / buildozer packaging files are kept for reference under the sample/ directory.
+# To build an Android APK, copy sample/buildozer.spec into your build directory and adapt as needed.
+
+# ORIGINAL (moved to sample/buildozer.spec):
 [app]
 title = Autonomous Network Suite
 package.name = networksuite
