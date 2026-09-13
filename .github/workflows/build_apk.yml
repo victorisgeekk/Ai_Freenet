@@ -11,7 +11,6 @@ jobs:
     env:
       ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
       ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
-      PATH: /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin:/home/runner/.buildozer/android/platform/android-sdk/platform-tools:/home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.2:${{ env.PATH }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,6 +54,12 @@ jobs:
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
+      - name: Add Android SDK to PATH
+        run: |
+          echo "/home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.2" >> $GITHUB_PATH
+          echo "/home/runner/.buildozer/android/platform/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "/home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
       - name: Android SDK diagnostics
         run: |
