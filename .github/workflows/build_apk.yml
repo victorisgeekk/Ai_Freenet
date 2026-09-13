@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+      ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
+      PATH: /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin:/home/runner/.buildozer/android/platform/android-sdk/platform-tools:/home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.2:${{ env.PATH }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,11 +37,6 @@ jobs:
             libreadline-dev libsqlite3-dev zlib1g-dev pkg-config \
             openjdk-17-jdk ant mercurial patch
 
-      - name: Set ANDROID_SDK_ROOT
-        run: |
-          echo "ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
-          mkdir -p /home/runner/.buildozer/android/platform/android-sdk
-
       - name: Install Android command-line tools and build-tools
         run: |
           sudo apt-get update
@@ -47,11 +46,9 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-latest.zip -O cmdline.zip
           mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
           unzip -q cmdline.zip -d $ANDROID_SDK_ROOT/cmdline-tools
-          # move to 'latest' layout if extracted folder exists
           if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" ]; then
             mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
           else
-            # some archives may extract directly into 'cmdline-tools'
             mv $ANDROID_SDK_ROOT/cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/latest || true
           fi
           rm -f cmdline.zip
@@ -59,11 +56,20 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
-      - name: Add Android SDK to PATH
+      - name: Android SDK diagnostics
         run: |
-          echo "/home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.2" >> $GITHUB_PATH
-          echo "/home/runner/.buildozer/android/platform/android-sdk/platform-tools" >> $GITHUB_PATH
-          echo "/home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "PATH=$PATH"
+          ls -la $ANDROID_SDK_ROOT || true
+          ls -la $ANDROID_SDK_ROOT/build-tools || true
+          ls -la $ANDROID_SDK_ROOT/platform-tools || true
+          which aidl || echo "aidl not found in PATH"
+          if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --list || true
+          else
+            echo "sdkmanager not found"
+          fi
 
       - name: Install Buildozer and Cython
         run: |
