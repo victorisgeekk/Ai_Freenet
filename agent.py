@@ -6,8 +6,12 @@ import subprocess
 import requests
 import json
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL_NAME = "qwen2.5:1.5b"
+# Configuration via environment for portability
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+MODEL_NAME = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
+# Execution timeout (seconds) for dynamic scripts
+EXEC_TIMEOUT = int(os.environ.get("EXEC_TIMEOUT", "40"))
+
 # Use repository directory as working directory for portability
 WORK_DIR = os.path.dirname(os.path.abspath(__file__))
 DYNAMIC_SCRIPT = os.path.join(WORK_DIR, "generated_task.py")
@@ -55,13 +59,29 @@ def call_ollama(prompt):
 
 
 def extract_code(raw_response):
+    """Extract the most likely python code block from an LLM response.
+    Accepts fences like ```python, ```py, or plain ``` and picks the largest block when multiple exist.
+    Falls back to heuristic line filtering if no fence is found.
+    """
     if not raw_response:
         return ""
-    match = re.search(r'```(?:python)?\s*(.*?)\s*```', raw_response, re.DOTALL | re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    # fallback: try to remove common assistant preamble lines
+
+    # Find all triple-backtick blocks with optional language label
+    blocks = re.findall(r'```(?:py(?:thon)?\s*)?\n?(.*?)```', raw_response, re.DOTALL | re.IGNORECASE)
+    if blocks:
+        # Prefer the longest block (likely the full code)
+        candidate = max((b.strip() for b in blocks), key=len)
+        if candidate:
+            return candidate
+
+    # Some models omit fences; try to find code-like regions by indentation or 'def'/'import'
     lines = raw_response.split('\n')
+    # Heuristic: include lines that look like code
+    code_lines = [l for l in lines if l.startswith('    ') or l.startswith('\t') or re.match(r'^(import |from |def |class |if |for |while |print\()', l.strip())]
+    if code_lines:
+        return '\n'.join(l.lstrip() for l in code_lines).strip()
+
+    # fallback: try to remove common assistant preamble lines
     valid_lines = [l for l in lines if not l.strip().startswith(("Here", "Sure", "Certainly", "Note:", "This script"))]
     return "\n".join(valid_lines).strip()
 
@@ -109,7 +129,7 @@ def execute_with_self_healing(code_content, max_retries=3):
                 stderr=subprocess.PIPE,
                 text=True
             )
-            stdout, stderr = proc.communicate(timeout=40)
+            stdout, stderr = proc.communicate(timeout=EXEC_TIMEOUT)
 
             if proc.returncode == 0:
                 print("\n[SUCCESS] Execution Output:")
@@ -123,7 +143,7 @@ def execute_with_self_healing(code_content, max_retries=3):
                 fix_prompt = (
                     f"Fix this Python code that failed to run on Termux/Ubuntu.\n\n"
                     f"Code:\n{BT}python\n{current_code}\n{BT}\n\n"
-                    f"Error:\n{error_msg}\n\nReturn ONLY valid python code wrapped in triple backticks.\n"
+                    f"Error:\n{error_msg}\n\nReturn ONLY valid python code wrapped in triple backticks."
                 )
                 raw_fixed = call_ollama(fix_prompt)
                 current_code = extract_code(raw_fixed)
@@ -138,7 +158,7 @@ def execute_with_self_healing(code_content, max_retries=3):
             timeout_prompt = (
                 f"This Python script froze or timed out:\n\n{BT}python\n{current_code}\n{BT}\n\n"
                 "Rewrite it to use strict timeouts (max 3 seconds per socket/HTTP connection).\n"
-                "Return ONLY valid python code wrapped in triple backticks.\n"
+                "Return ONLY valid python code wrapped in triple backticks."
             )
             raw_fixed = call_ollama(timeout_prompt)
             current_code = extract_code(raw_fixed)
@@ -163,14 +183,28 @@ def main():
     raw_ai = call_ollama(initial_prompt)
     initial_code = extract_code(raw_ai)
 
+    if not initial_code:
+        print("[!] No code returned by AI. Raw AI response (truncated):")
+        print(raw_ai[:2000])
+        return
+
     output = execute_with_self_healing(initial_code)
 
     if output:
         print("\n[*] AI is deciding next diagnostic/bypass step based on live scan results...")
-        next_prompt = f"Based on these live network diagnostic results:\n{output}\n\nWrite a python script to test available bypass tricks, tools, or DNS/proxy connections suitable for this network. Use only standard library and safe non-invasive tests. Return ONLY python code wrapped in triple backticks."
+        next_prompt = (
+            f"Based on these live network diagnostic results:\n{output}\n\n"
+            "Write a python script to test available bypass tricks, tools, or DNS/proxy connections suitable for this network. "
+            "Prefer standard library usage and avoid privileged operations. Return ONLY valid python code wrapped in triple backticks."
+        )
         raw_next = call_ollama(next_prompt)
         next_code = extract_code(raw_next)
-        execute_with_self_healing(next_code)
+        if next_code:
+            execute_with_self_healing(next_code)
+        else:
+            print("[!] AI did not return runnable next-step code. Skipping.")
+    else:
+        print("[!] Initial dynamic task did not produce output. Stopping.")
 
 
 if __name__ == "__main__":
