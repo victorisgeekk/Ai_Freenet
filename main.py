@@ -10,6 +10,13 @@ class AutonomousNetworkApp(App):
     TITLE = "Ai_Freenet Autonomous Engine"
     SUB_TITLE = "Dev by Victor Geek"
 
+    # Explicit Textual key bindings so single-key shortcuts work even when widgets have focus
+    BINDINGS = [
+        ("r", "run_agent", "Run"),
+        ("c", "clear_logs", "Clear"),
+        ("q", "quit_app", "Exit"),
+    ]
+
     # Termux Screen နှင့် ကိုက်ညီမည့် Modern Linux Terminal CSS (Layout Clipping မဖြစ်အောင် ပြင်ဆင်ထားသည်)
     CSS = """
     Screen {
@@ -90,15 +97,7 @@ class AutonomousNetworkApp(App):
         log.write("[dim blue]Controls: Press [R] Run | [C] Clear | [Q] Exit | Tab & Enter fully functional[/dim blue]\n")
         self.query_one("#run-btn", Button).focus()
 
-    def on_key(self, event: Key) -> None:
-        """မည်သည့် Widget တွင် ရောက်နေပါစေ ကီးဘုတ် ရိုက်ချက်များကို တိုက်ရိုက် ဖမ်းယူခြင်း"""
-        k = event.key.lower()
-        if k == "r":
-            self.action_run_agent()
-        elif k == "c":
-            self.action_clear_logs()
-        elif k == "q":
-            self.action_quit_app()
+    # We removed the fragile / truncated on_key docstring handler and rely on BINDINGS
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
@@ -143,4 +142,3 @@ class AutonomousNetworkApp(App):
 if __name__ == "__main__":
     app = AutonomousNetworkApp()
     app.run()
-        
